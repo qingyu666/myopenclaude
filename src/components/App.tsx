@@ -13,8 +13,8 @@ type Props = {
 };
 
 /**
- * Top-level wrapper for interactive sessions.
- * Provides FPS metrics, stats context, and app state to the component tree.
+ * 交互式会话的顶层包装组件。
+ * 为组件树提供 FPS 指标、统计上下文和应用状态。
  */
 export function App(t0: Props) {
   const $ = _c(9);

@@ -12,6 +12,7 @@ import type { Command } from './commands.js'
 import type { CanUseToolFn } from './hooks/useCanUseTool.js'
 import type { ThinkingConfig } from './utils/thinking.js'
 
+// 工具输入的 JSON Schema 类型定义
 export type ToolInputJSONSchema = {
   [x: string]: unknown
   type: 'object'
@@ -38,14 +39,14 @@ import type {
   SystemMessage,
   UserMessage,
 } from './types/message.js'
-// Import permission types from centralized location to break import cycles
-// Import PermissionResult from centralized location to break import cycles
+// 从集中位置导入权限类型，打破导入循环
+// 从集中位置导入 PermissionResult，打破导入循环
 import type {
   AdditionalWorkingDirectory,
   PermissionMode,
   PermissionResult,
 } from './types/permissions.js'
-// Import tool progress types from centralized location to break import cycles
+// 从集中位置导入工具进度类型，打破导入循环
 import type {
   AgentToolProgress,
   BashProgress,
@@ -61,7 +62,7 @@ import type { DenialTrackingState } from './utils/permissions/denialTracking.js'
 import type { SystemPrompt } from './utils/systemPromptType.js'
 import type { ContentReplacementState } from './utils/toolResultStorage.js'
 
-// Re-export progress types for backwards compatibility
+// 为向后兼容重新导出进度类型
 export type {
   AgentToolProgress,
   BashProgress,
@@ -87,11 +88,13 @@ import type { AttributionState } from './utils/commitAttribution.js'
 import type { FileHistoryState } from './utils/fileHistory.js'
 import type { Theme, ThemeName } from './utils/theme.js'
 
+// 查询链追踪信息，用于追踪嵌套查询的链路
 export type QueryChainTracking = {
-  chainId: string
-  depth: number
+  chainId: string // 链路唯一标识
+  depth: number // 嵌套深度
 }
 
+// 输入验证结果：通过或失败（附带错误信息和错误码）
 export type ValidationResult =
   | { result: true }
   | {
@@ -100,6 +103,7 @@ export type ValidationResult =
       errorCode: number
     }
 
+// 设置工具 JSX 渲染的函数类型
 export type SetToolJSXFn = (
   args: {
     jsx: React.ReactNode | null
@@ -113,13 +117,14 @@ export type SetToolJSXFn = (
   } | null,
 ) => void
 
-// Import tool permission types from centralized location to break import cycles
+// 从集中位置导入工具权限类型，打破导入循环
 import type { ToolPermissionRulesBySource } from './types/permissions.js'
 
-// Re-export for backwards compatibility
+// 为向后兼容重新导出
 export type { ToolPermissionRulesBySource }
 
-// Apply DeepImmutable to the imported type
+// 工具权限上下文：包含权限模式、工作目录、允许/拒绝/询问规则等
+// 使用 DeepImmutable 确保类型不可变
 export type ToolPermissionContext = DeepImmutable<{
   mode: PermissionMode
   additionalWorkingDirectories: Map<string, AdditionalWorkingDirectory>
@@ -137,6 +142,7 @@ export type ToolPermissionContext = DeepImmutable<{
   prePlanMode?: PermissionMode
 }>
 
+// 创建空的工具权限上下文（默认值）
 export const getEmptyToolPermissionContext: () => ToolPermissionContext =
   () => ({
     mode: 'default',
@@ -147,14 +153,16 @@ export const getEmptyToolPermissionContext: () => ToolPermissionContext =
     isBypassPermissionsModeAvailable: false,
   })
 
+// 压缩进度事件类型
 export type CompactProgressEvent =
   | {
-      type: 'hooks_start'
+      type: 'hooks_start' // 钩子开始（压缩前/后或会话开始）
       hookType: 'pre_compact' | 'post_compact' | 'session_start'
     }
-  | { type: 'compact_start' }
-  | { type: 'compact_end' }
+  | { type: 'compact_start' } // 压缩开始
+  | { type: 'compact_end' } // 压缩结束
 
+// 工具使用上下文：工具执行时的完整上下文信息
 export type ToolUseContext = {
   options: {
     commands: Command[]
@@ -314,16 +322,19 @@ export type ToolUseContext = {
   renderedSystemPrompt?: SystemPrompt
 }
 
-// Re-export ToolProgressData from centralized location
+// 从集中位置重新导出 ToolProgressData
 export type { ToolProgressData }
 
+// 进度类型：工具进度或钩子进度
 export type Progress = ToolProgressData | HookProgress
 
+// 工具进度信息
 export type ToolProgress<P extends ToolProgressData> = {
-  toolUseID: string
-  data: P
+  toolUseID: string // 工具使用的唯一标识
+  data: P // 进度数据
 }
 
+// 过滤出工具进度消息（排除钩子进度）
 export function filterToolProgressMessages(
   progressMessagesForMessage: ProgressMessage[],
 ): ProgressMessage<ToolProgressData>[] {
@@ -333,32 +344,34 @@ export function filterToolProgressMessages(
   )
 }
 
+// 工具执行结果
 export type ToolResult<T> = {
-  data: T
-  newMessages?: (
+  data: T // 结果数据
+  newMessages?: ( // 工具执行过程中产生的新消息
     | UserMessage
     | AssistantMessage
     | AttachmentMessage
     | SystemMessage
   )[]
-  // contextModifier is only honored for tools that aren't concurrency safe.
+  // contextModifier 仅对非并发安全的工具有效
   contextModifier?: (context: ToolUseContext) => ToolUseContext
-  /** MCP protocol metadata (structuredContent, _meta) to pass through to SDK consumers */
+  /** MCP 协议元数据（structuredContent, _meta），透传给 SDK 消费者 */
   mcpMeta?: {
     _meta?: Record<string, unknown>
     structuredContent?: Record<string, unknown>
   }
 }
 
+// 工具调用进度回调函数类型
 export type ToolCallProgress<P extends ToolProgressData = ToolProgressData> = (
   progress: ToolProgress<P>,
 ) => void
 
-// Type for any schema that outputs an object with string keys
+// 输出对象为字符串键的 Zod schema 类型
 export type AnyObject = z.ZodType<{ [key: string]: unknown }>
 
 /**
- * Checks if a tool matches the given name (primary name or alias).
+ * 检查工具是否匹配给定的名称（主名称或别名）。
  */
 export function toolMatchesName(
   tool: { name: string; aliases?: string[] },
@@ -368,29 +381,38 @@ export function toolMatchesName(
 }
 
 /**
- * Finds a tool by name or alias from a list of tools.
+ * 根据名称或别名从工具列表中查找工具。
  */
 export function findToolByName(tools: Tools, name: string): Tool | undefined {
   return tools.find(t => toolMatchesName(t, name))
 }
 
+// Tool 核心类型定义：描述一个完整的工具
 export type Tool<
   Input extends AnyObject = AnyObject,
   Output = unknown,
   P extends ToolProgressData = ToolProgressData,
 > = {
   /**
-   * Optional aliases for backwards compatibility when a tool is renamed.
-   * The tool can be looked up by any of these names in addition to its primary name.
+   * 可选的别名列表，用于工具重命名时的向后兼容。
+   * 工具可以通过主名称或任意别名被查找。
    */
   aliases?: string[]
   /**
-   * One-line capability phrase used by ToolSearch for keyword matching.
-   * Helps the model find this tool via keyword search when it's deferred.
-   * 3–10 words, no trailing period.
-   * Prefer terms not already in the tool name (e.g. 'jupyter' for NotebookEdit).
+   * 一行能力描述，用于 ToolSearch 的关键词匹配。
+   * 帮助模型通过关键词搜索找到被延迟加载的工具。
+   * 3-10 个词，不要句号。
+   * 优先使用不在工具名称中的术语（例如 NotebookEdit 用 'jupyter'）。
    */
   searchHint?: string
+  /**
+   * 工具的核心执行方法。
+   * @param args 工具输入参数
+   * @param context 工具使用上下文
+   * @param canUseTool 权限检查函数
+   * @param parentMessage 父消息（助手消息）
+   * @param onProgress 进度回调
+   */
   call(
     args: z.infer<Input>,
     context: ToolUseContext,
@@ -407,99 +429,94 @@ export type Tool<
     },
   ): Promise<string>
   readonly inputSchema: Input
-  // Type for MCP tools that can specify their input schema directly in JSON Schema format
-  // rather than converting from Zod schema
+  // MCP 工具可以直接以 JSON Schema 格式指定输入 schema，
+  // 而不需要从 Zod schema 转换
   readonly inputJSONSchema?: ToolInputJSONSchema
-  // Optional because TungstenTool doesn't define this. TODO: Make it required.
-  // When we do that, we can also go through and make this a bit more type-safe.
+  // 可选，因为 TungstenTool 没有定义它。TODO: 使其成为必需。
+  // 届时也可以让这个字段更类型安全。
   outputSchema?: z.ZodType<unknown>
   inputsEquivalent?(a: z.infer<Input>, b: z.infer<Input>): boolean
-  isConcurrencySafe(input: z.infer<Input>): boolean
-  isEnabled(): boolean
-  isReadOnly(input: z.infer<Input>): boolean
-  /** Defaults to false. Only set when the tool performs irreversible operations (delete, overwrite, send). */
+  isConcurrencySafe(input: z.infer<Input>): boolean // 是否并发安全
+  isEnabled(): boolean // 是否启用
+  isReadOnly(input: z.infer<Input>): boolean // 是否只读操作
+  /** 默认为 false。仅在工具执行不可逆操作（删除、覆盖、发送）时设置。 */
   isDestructive?(input: z.infer<Input>): boolean
   /**
-   * What should happen when the user submits a new message while this tool
-   * is running.
+   * 当用户在此工具运行时提交新消息，应该发生什么。
    *
-   * - `'cancel'` — stop the tool and discard its result
-   * - `'block'`  — keep running; the new message waits
+   * - `'cancel'` — 停止工具并丢弃其结果
+   * - `'block'`  — 继续运行；新消息等待
    *
-   * Defaults to `'block'` when not implemented.
+   * 未实现时默认为 `'block'`。
    */
   interruptBehavior?(): 'cancel' | 'block'
   /**
-   * Returns information about whether this tool use is a search or read operation
-   * that should be collapsed into a condensed display in the UI. Examples include
-   * file searching (Grep, Glob), file reading (Read), and bash commands like find,
-   * grep, wc, etc.
+   * 返回此工具使用是否为搜索或读取操作的信息，
+   * 在 UI 中应折叠为精简显示。例如文件搜索（Grep、Glob）、
+   * 文件读取（Read）以及 find、grep、wc 等 bash 命令。
    *
-   * Returns an object indicating whether the operation is a search or read operation:
-   * - `isSearch: true` for search operations (grep, find, glob patterns)
-   * - `isRead: true` for read operations (cat, head, tail, file read)
-   * - `isList: true` for directory-listing operations (ls, tree, du)
-   * - All can be false if the operation shouldn't be collapsed
+   * 返回一个对象，指示操作是否为搜索或读取操作：
+   * - `isSearch: true` 搜索操作（grep、find、glob 模式）
+   * - `isRead: true` 读取操作（cat、head、tail、文件读取）
+   * - `isList: true` 目录列表操作（ls、tree、du）
+   * - 全部为 false 表示操作不应折叠
    */
   isSearchOrReadCommand?(input: z.infer<Input>): {
     isSearch: boolean
     isRead: boolean
     isList?: boolean
   }
-  isOpenWorld?(input: z.infer<Input>): boolean
-  requiresUserInteraction?(): boolean
-  isMcp?: boolean
-  isLsp?: boolean
+  isOpenWorld?(input: z.infer<Input>): boolean // 是否为开放世界操作（可能访问外部资源）
+  requiresUserInteraction?(): boolean // 是否需要用户交互
+  isMcp?: boolean // 是否为 MCP 工具
+  isLsp?: boolean // 是否为 LSP 工具
   /**
-   * When true, this tool is deferred (sent with defer_loading: true) and requires
-   * ToolSearch to be used before it can be called.
+   * 当为 true 时，此工具被延迟加载（以 defer_loading: true 发送），
+   * 需要先使用 ToolSearch 才能调用。
    */
   readonly shouldDefer?: boolean
   /**
-   * When true, this tool is never deferred — its full schema appears in the
-   * initial prompt even when ToolSearch is enabled. For MCP tools, set via
-   * `_meta['anthropic/alwaysLoad']`. Use for tools the model must see on
-   * turn 1 without a ToolSearch round-trip.
+   * 当为 true 时，此工具永不延迟加载——即使启用了 ToolSearch，
+   * 其完整 schema 也会出现在初始提示中。对于 MCP 工具，
+   * 通过 `_meta['anthropic/alwaysLoad']` 设置。用于模型在第一轮
+   * 就必须看到的工具，无需 ToolSearch 往返。
    */
   readonly alwaysLoad?: boolean
   /**
-   * For MCP tools: the server and tool names as received from the MCP server (unnormalized).
-   * Present on all MCP tools regardless of whether `name` is prefixed (mcp__server__tool)
-   * or unprefixed (CLAUDE_AGENT_SDK_MCP_NO_PREFIX mode).
+   * 对于 MCP 工具：从 MCP 服务器接收的服务器和工具名称（未规范化）。
+   * 存在于所有 MCP 工具上，无论 `name` 是否有前缀（mcp__server__tool）
+   * 或无前缀（CLAUDE_AGENT_SDK_MCP_NO_PREFIX 模式）。
    */
   mcpInfo?: { serverName: string; toolName: string }
-  readonly name: string
+  readonly name: string // 工具名称
   /**
-   * Maximum size in characters for tool result before it gets persisted to disk.
-   * When exceeded, the result is saved to a file and Claude receives a preview
-   * with the file path instead of the full content.
+   * 工具结果在持久化到磁盘之前的最大字符数。
+   * 超过时，结果会保存到文件，Claude 收到文件路径预览而非完整内容。
    *
-   * Set to Infinity for tools whose output must never be persisted (e.g. Read,
-   * where persisting creates a circular Read→file→Read loop and the tool
-   * already self-bounds via its own limits).
+   * 设为 Infinity 表示工具输出永不持久化（例如 Read 工具，
+   * 持久化会造成 Read→file→Read 循环，且工具自身已有大小限制）。
    */
   maxResultSizeChars: number
   /**
-   * When true, enables strict mode for this tool, which causes the API to
-   * more strictly adhere to tool instructions and parameter schemas.
-   * Only applied when the tengu_tool_pear is enabled.
+   * 当为 true 时，为此工具启用严格模式，使 API 更严格地
+   * 遵循工具指令和参数 schema。仅在 tengu_tool_pear 启用时应用。
    */
   readonly strict?: boolean
 
   /**
-   * Called on copies of tool_use input before observers see it (SDK stream,
-   * transcript, canUseTool, PreToolUse/PostToolUse hooks). Mutate in place
-   * to add legacy/derived fields. Must be idempotent. The original API-bound
-   * input is never mutated (preserves prompt cache). Not re-applied when a
-   * hook/permission returns a fresh updatedInput — those own their shape.
+   * 在观察者（SDK 流、转录、canUseTool、PreToolUse/PostToolUse 钩子）
+   * 看到 tool_use 输入之前，对输入副本调用此方法。原地修改以添加
+   * 遗留/派生字段。必须是幂等的。原始绑定 API 的输入永远不会被修改
+   * （保留提示缓存）。当钩子/权限返回新的 updatedInput 时不重新应用
+   * ——它们拥有自己的形状。
    */
   backfillObservableInput?(input: Record<string, unknown>): void
 
   /**
-   * Determines if this tool is allowed to run with this input in the current context.
-   * It informs the model of why the tool use failed, and does not directly display any UI.
-   * @param input
-   * @param context
+   * 判断此工具在当前上下文中是否允许以该输入运行。
+   * 它通知模型工具使用失败的原因，不直接显示任何 UI。
+   * @param input 工具输入
+   * @param context 工具使用上下文
    */
   validateInput?(
     input: z.infer<Input>,
@@ -507,24 +524,23 @@ export type Tool<
   ): Promise<ValidationResult>
 
   /**
-   * Determines if the user is asked for permission. Only called after validateInput() passes.
-   * General permission logic is in permissions.ts. This method contains tool-specific logic.
-   * @param input
-   * @param context
+   * 判断是否需要请求用户权限。仅在 validateInput() 通过后调用。
+   * 通用权限逻辑在 permissions.ts 中。此方法包含工具特定的逻辑。
+   * @param input 工具输入
+   * @param context 工具使用上下文
    */
   checkPermissions(
     input: z.infer<Input>,
     context: ToolUseContext,
   ): Promise<PermissionResult>
 
-  // Optional method for tools that operate on a file path
+  // 可选方法：用于操作文件路径的工具
   getPath?(input: z.infer<Input>): string
 
   /**
-   * Prepare a matcher for hook `if` conditions (permission-rule patterns like
-   * "git *" from "Bash(git *)"). Called once per hook-input pair; any
-   * expensive parsing happens here. Returns a closure that is called per
-   * hook pattern. If not implemented, only tool-name-level matching works.
+   * 为钩子 `if` 条件准备匹配器（权限规则模式，如 "git *" 来自 "Bash(git *)"）。
+   * 每个钩子输入对调用一次；任何耗时的解析都在这里完成。
+   * 返回一个闭包，对每个钩子模式调用。如果未实现，只能进行工具名级别的匹配。
    */
   preparePermissionMatcher?(
     input: z.infer<Input>,
@@ -710,14 +726,14 @@ export type Tool<
 }
 
 /**
- * A collection of tools. Use this type instead of `Tool[]` to make it easier
- * to track where tool sets are assembled, passed, and filtered across the codebase.
+ * 工具集合。使用此类型而非 `Tool[]`，便于追踪工具集
+ * 在代码库中的组装、传递和过滤位置。
  */
 export type Tools = readonly Tool[]
 
 /**
- * Methods that `buildTool` supplies a default for. A `ToolDef` may omit these;
- * the resulting `Tool` always has them.
+ * `buildTool` 提供默认值的方法。`ToolDef` 可以省略这些；
+ * 生成的 `Tool` 总是包含它们。
  */
 type DefaultableToolKeys =
   | 'isEnabled'
@@ -729,9 +745,8 @@ type DefaultableToolKeys =
   | 'userFacingName'
 
 /**
- * Tool definition accepted by `buildTool`. Same shape as `Tool` but with the
- * defaultable methods optional — `buildTool` fills them in so callers always
- * see a complete `Tool`.
+ * `buildTool` 接受的工具定义。与 `Tool` 形状相同，但可默认的方法是可选的
+ * ——`buildTool` 会填充它们，使调用方始终看到完整的 `Tool`。
  */
 export type ToolDef<
   Input extends AnyObject = AnyObject,
@@ -741,11 +756,11 @@ export type ToolDef<
   Partial<Pick<Tool<Input, Output, P>, DefaultableToolKeys>>
 
 /**
- * Type-level spread mirroring `{ ...TOOL_DEFAULTS, ...def }`. For each
- * defaultable key: if D provides it (required), D's type wins; if D omits
- * it or has it optional (inherited from Partial<> in the constraint), the
- * default fills in. All other keys come from D verbatim — preserving arity,
- * optional presence, and literal types exactly as `satisfies Tool` did.
+ * 类型级别的展开，镜像 `{ ...TOOL_DEFAULTS, ...def }`。
+ * 对于每个可默认的键：如果 D 提供了它（必需），D 的类型胜出；
+ * 如果 D 省略了它或将其设为可选（继承自 Partial<> 约束），
+ * 则使用默认值。所有其他键直接来自 D —— 保留参数数量、
+ * 可选存在和字面量类型，与 `satisfies Tool` 完全一致。
  */
 type BuiltTool<D> = Omit<D, DefaultableToolKeys> & {
   [K in DefaultableToolKeys]-?: K extends keyof D
@@ -756,17 +771,17 @@ type BuiltTool<D> = Omit<D, DefaultableToolKeys> & {
 }
 
 /**
- * Build a complete `Tool` from a partial definition, filling in safe defaults
- * for the commonly-stubbed methods. All tool exports should go through this so
- * that defaults live in one place and callers never need `?.() ?? default`.
+ * 从部分定义构建完整的 `Tool`，为常用存根方法填充安全默认值。
+ * 所有工具导出都应通过此函数，使默认值集中在一处，
+ * 调用方永远不需要 `?.() ?? default`。
  *
- * Defaults (fail-closed where it matters):
+ * 默认值（在关键处采用失败关闭策略）：
  * - `isEnabled` → `true`
- * - `isConcurrencySafe` → `false` (assume not safe)
- * - `isReadOnly` → `false` (assume writes)
+ * - `isConcurrencySafe` → `false`（假设不安全）
+ * - `isReadOnly` → `false`（假设有写操作）
  * - `isDestructive` → `false`
- * - `checkPermissions` → `{ behavior: 'allow', updatedInput }` (defer to general permission system)
- * - `toAutoClassifierInput` → `''` (skip classifier — security-relevant tools must override)
+ * - `checkPermissions` → `{ behavior: 'allow', updatedInput }`（委托给通用权限系统）
+ * - `toAutoClassifierInput` → `''`（跳过分类器——安全相关工具必须覆盖）
  * - `userFacingName` → `name`
  */
 const TOOL_DEFAULTS = {
@@ -783,22 +798,21 @@ const TOOL_DEFAULTS = {
   userFacingName: (_input?: unknown) => '',
 }
 
-// The defaults type is the ACTUAL shape of TOOL_DEFAULTS (optional params so
-// both 0-arg and full-arg call sites type-check — stubs varied in arity and
-// tests relied on that), not the interface's strict signatures.
+// 默认值类型是 TOOL_DEFAULTS 的实际形状（可选参数使得
+// 0 参数和完整参数的调用点都能通过类型检查——存根的参数数量
+// 不同，测试依赖这一点），而不是接口的严格签名。
 type ToolDefaults = typeof TOOL_DEFAULTS
 
-// D infers the concrete object-literal type from the call site. The
-// constraint provides contextual typing for method parameters; `any` in
-// constraint position is structural and never leaks into the return type.
-// BuiltTool<D> mirrors runtime `{...TOOL_DEFAULTS, ...def}` at the type level.
+// D 从调用点推断具体的对象字面量类型。约束为方法参数
+// 提供上下文类型；约束位置的 `any` 是结构性的，不会泄漏到返回类型。
+// BuiltTool<D> 在类型级别镜像运行时的 `{...TOOL_DEFAULTS, ...def}`。
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyToolDef = ToolDef<any, any, any>
 
 export function buildTool<D extends AnyToolDef>(def: D): BuiltTool<D> {
-  // The runtime spread is straightforward; the `as` bridges the gap between
-  // the structural-any constraint and the precise BuiltTool<D> return. The
-  // type semantics are proven by the 0-error typecheck across all 60+ tools.
+  // 运行时展开很直接；`as` 弥合了结构性的 any 约束和精确的
+  // BuiltTool<D> 返回类型之间的差距。类型语义由 60+ 个工具的
+  // 0 错误类型检查证明。
   return {
     ...TOOL_DEFAULTS,
     userFacingName: () => def.name,

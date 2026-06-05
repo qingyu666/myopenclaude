@@ -24,15 +24,22 @@ import {
   resolveOpenAIShimRuntimeContext,
 } from '../../integrations/runtimeMetadata.js'
 
+// 各 LLM 提供商的默认 API 基础 URL
 export const DEFAULT_OPENAI_BASE_URL = 'https://api.openai.com/v1'
 export const DEFAULT_CODEX_BASE_URL = 'https://chatgpt.com/backend-api/codex'
 export const DEFAULT_MISTRAL_BASE_URL = 'https://api.mistral.ai/v1'
 export const DEFAULT_OPENCODE_BASE_URL = 'https://opencode.ai/zen/v1'
 export const DEFAULT_OPENCODE_GO_BASE_URL = 'https://opencode.ai/zen/go/v1'
-/** Default GitHub Copilot API model when user selects copilot / github:copilot */
+/** 用户选择 copilot / github:copilot 时的默认 GitHub Copilot API 模型 */
 export const DEFAULT_GITHUB_MODELS_API_MODEL = 'gpt-4o'
+// 记录已警告过的环境变量名，避免重复输出日志
 const warnedUndefinedEnvNames = new Set<string>()
 
+/**
+ * 规范化 Gitlawb OpenGateway 的基础 URL。
+ * 将旧路径（/v1/xiaomi-mimo、/v1/gmi-cloud）重写为统一的 /v1 端点，
+ * 因为这些模型已迁移到网关根路径下。
+ */
 function normalizeGitlawbOpengatewayBaseUrl(baseUrl: string | undefined): string | undefined {
   if (!baseUrl) return undefined
   try {
@@ -54,6 +61,9 @@ function normalizeGitlawbOpengatewayBaseUrl(baseUrl: string | undefined): string
   return baseUrl
 }
 
+// Codex 模型别名映射表：将用户友好的别名（如 codexplan、codexspark）
+// 解析为实际的模型 ID 和推理努力级别。
+// 例如：codexplan → gpt-5.5 (high), codexspark → gpt-5.3-codex-spark (默认)
 const CODEX_ALIAS_MODELS: Record<
   string,
   {
@@ -108,14 +118,23 @@ const CODEX_ALIAS_MODELS: Record<
   },
 } as const
 
+// Codex 别名类型，用于类型安全的别名查找
 type CodexAlias = keyof typeof CODEX_ALIAS_MODELS
+// 推理努力级别：控制模型在推理时投入的计算量
 type ReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh'
 
+// OpenAI Codex 快捷别名集合（codexplan 和 codexspark）
 const OPENAI_CODEX_SHORTCUT_ALIASES = new Set(['codexplan', 'codexspark'])
 
+// 提供商传输协议类型：
+// - chat_completions: 标准 OpenAI Chat Completions API
+// - responses: OpenAI Responses API（较新的 API 格式）
+// - codex_responses: Codex 专用的 Responses API
 export type ProviderTransport = 'chat_completions' | 'responses' | 'codex_responses'
+// OpenAI 兼容的 API 格式类型
 export type OpenAICompatibleApiFormat = 'chat_completions' | 'responses'
 
+// 解析后的提供商请求配置，包含传输协议、模型信息和基础 URL
 export type ResolvedProviderRequest = {
   transport: ProviderTransport
   requestedModel: string
@@ -126,6 +145,7 @@ export type ResolvedProviderRequest = {
   }
 }
 
+// 解析后的 Codex 凭证，包含 API 密钥、账户 ID 和凭证来源
 export type ResolvedCodexCredentials = {
   apiKey: string
   accountId?: string
@@ -133,6 +153,7 @@ export type ResolvedCodexCredentials = {
   source: 'env' | 'secure-storage' | 'auth.json' | 'none'
 }
 
+// 模型描述符：解析模型字符串后的结构化表示
 type ModelDescriptor = {
   raw: string
   baseModel: string
@@ -141,8 +162,10 @@ type ModelDescriptor = {
   }
 }
 
+// 本地主机名集合，用于判断 URL 是否指向本地服务
 const LOCALHOST_HOSTNAMES = new Set(['localhost', '127.0.0.1', '::1'])
 
+// 对缓存作用域分区值进行哈希，生成 16 字符的 SHA-256 前缀
 function hashCacheScopePartition(value: unknown): string {
   return createHash('sha256')
     .update(JSON.stringify(value))
@@ -150,10 +173,12 @@ function hashCacheScopePartition(value: unknown): string {
     .slice(0, 16)
 }
 
+// 规范化缓存作用域头值，去除首尾空白
 function normalizeCacheScopeHeaderValue(value: string | undefined): string {
   return value?.trim() ?? ''
 }
 
+// 判断是否为 RFC1918 私有 IPv4 地址（10.x、172.16-31.x、192.168.x）
 function isPrivateIpv4Address(hostname: string): boolean {
   const octets = hostname.split('.').map(part => Number.parseInt(part, 10))
   if (octets.length !== 4 || octets.some(octet => Number.isNaN(octet))) {
@@ -167,6 +192,7 @@ function isPrivateIpv4Address(hostname: string): boolean {
   )
 }
 
+// 判断是否为私有 IPv6 地址（ULA fc00::/7 或链路本地 fe80::/10）
 function isPrivateIpv6Address(hostname: string): boolean {
   const firstHextet = hostname.split(':', 1)[0]
   if (!firstHextet) return false
@@ -177,9 +203,9 @@ function isPrivateIpv6Address(hostname: string): boolean {
   return (prefix & 0xfe00) === 0xfc00 || (prefix & 0xffc0) === 0xfe80
 }
 
-// Reads an env-var-style string intended as a URL or path, rejecting both
-// empty strings and the literal string "undefined" that Windows shells can
-// write when a variable is unset-then-referenced without quotes (issue #336).
+// 读取一个环境变量风格的字符串（用作 URL 或路径），拒绝空字符串
+// 以及 Windows shell 在变量未设置但无引号引用时可能写入的字面量
+// "undefined"（issue #336）。
 function asEnvUrl(value: string | undefined): string | undefined {
   if (!value) return undefined
   const trimmed = value.trim()
@@ -190,6 +216,8 @@ function asEnvUrl(value: string | undefined): string | undefined {
   return trimmed
 }
 
+// 带命名的环境 URL 读取：与 asEnvUrl 类似，但对字面量 "undefined" 值
+// 输出调试日志（仅首次），帮助用户发现环境变量配置错误。
 function asNamedEnvUrl(
   value: string | undefined,
   envName: string,
@@ -213,6 +241,7 @@ function asNamedEnvUrl(
   return trimmed
 }
 
+// 从嵌套对象中按路径读取字符串值，支持多种可能的路径格式
 function readNestedString(
   value: unknown,
   paths: string[][],
@@ -234,6 +263,7 @@ function readNestedString(
   return undefined
 }
 
+// 解析推理努力级别字符串，不合法值返回 undefined
 function parseReasoningEffort(value: string | undefined): ReasoningEffort | undefined {
   if (!value) return undefined
   const normalized = value.trim().toLowerCase()
@@ -243,6 +273,7 @@ function parseReasoningEffort(value: string | undefined): ReasoningEffort | unde
   return undefined
 }
 
+// 解析 OpenAI 兼容的 API 格式字符串，支持多种别名写法
 export function parseOpenAICompatibleApiFormat(
   value: string | undefined,
 ): OpenAICompatibleApiFormat | undefined {
@@ -267,6 +298,8 @@ export function parseOpenAICompatibleApiFormat(
   return undefined
 }
 
+// 解析模型描述符：将模型字符串（可能含查询参数如 ?reasoning=high）
+// 解析为结构化的 ModelDescriptor，支持 Codex 别名解析
 function parseModelDescriptor(model: string): ModelDescriptor {
   const trimmed = model.trim()
   const queryIndex = trimmed.indexOf('?')
@@ -306,6 +339,7 @@ function parseModelDescriptor(model: string): ModelDescriptor {
   }
 }
 
+// 判断模型是否为 Codex 别名（如 codexplan、gpt-5.5 等）
 export function isCodexAlias(model: string): boolean {
   const normalized = model.trim().toLowerCase()
   const base = normalized.split('?', 1)[0] ?? normalized
@@ -318,6 +352,8 @@ function isOpenAICodexShortcutAlias(model: string): boolean {
   return OPENAI_CODEX_SHORTCUT_ALIASES.has(base)
 }
 
+// 判断是否应使用 Codex 传输协议：
+// 当 base URL 指向 Codex 端点，或未指定 base URL 且模型为 Codex 别名时返回 true
 export function shouldUseCodexTransport(
   model: string,
   baseUrl: string | undefined,
@@ -326,6 +362,8 @@ export function shouldUseCodexTransport(
   return isCodexBaseUrl(explicitBaseUrl) || (!explicitBaseUrl && isCodexAlias(model))
 }
 
+// 判断 GitHub 模型是否应使用 Responses API：
+// Codex 品牌模型和 GPT-5+ 模型（gpt-5-mini 除外）使用 /responses 端点
 function shouldUseGithubResponsesApi(model: string): boolean {
   const normalized = model.trim().toLowerCase()
 
@@ -341,6 +379,10 @@ function shouldUseGithubResponsesApi(model: string): boolean {
   return true
 }
 
+/**
+ * 判断 URL 是否指向本地提供商（环回地址、RFC1918 私有地址、.local 域名、ULA/链路本地 IPv6）。
+ * 用于决定是否启用本地快速路径优化。
+ */
 export function isLocalProviderUrl(baseUrl: string | undefined): boolean {
   if (!baseUrl) return false
   try {
@@ -380,29 +422,24 @@ export function isLocalProviderUrl(baseUrl: string | undefined): boolean {
   }
 }
 
-// Fast-path opt-outs that are safe (and beneficial) when the provider is a
-// local OpenAI-compatible endpoint. These features are designed for cloud
-// behaviours that do not exist on local backends:
-//   - byte-stable serialization (`stableStringify`) targets implicit prefix
-//     caching on OpenAI/Kimi/DeepSeek/Codex; local backends do not hash
-//     request prefixes, so the deep key-sort is pure CPU overhead.
-//   - strict tool-schema normalization rewrites Anthropic schemas to the
-//     `additionalProperties: false` shape required by Groq/Azure; local
-//     llama.cpp/vLLM accept either form, so the recursive walk is wasted.
-//   - tool-result compression tiers tool_result blocks for stateless cloud
-//     providers; on a single-user local box where the conversation lives
-//     in RAM, the tier-walk is wasted unless the user opts back in.
+// 当提供商是本地 OpenAI 兼容端点时，可安全（且有益）的快速路径跳过。
+// 这些功能是为云服务行为设计的，在本地后端不存在：
+//   - 字节稳定序列化（`stableStringify`）针对 OpenAI/Kimi/DeepSeek/Codex
+//     的隐式前缀缓存；本地后端不会哈希请求前缀，深度键排序纯属 CPU 开销。
+//   - 严格工具模式规范化将 Anthropic schema 重写为 Groq/Azure 要求的
+//     `additionalProperties: false` 形式；本地 llama.cpp/vLLM 接受两种形式，
+//     递归遍历是浪费。
+//   - 工具结果压缩为无状态云提供商分层 tool_result 块；在单用户本地机器上，
+//     对话存于 RAM 中，分层遍历是浪费的，除非用户选择重新启用。
 //
-// Issue #1016 traced cumulative client-side overhead as the dominant cause
-// of v0.5+ regressions against ~45 tok/s local models: against a 200ms cloud
-// API the layers are invisible, but against multi-second local round-trips
-// they multiply per-call.
+// Issue #1016 追踪到累积的客户端开销是 v0.5+ 相对 ~45 tok/s 本地模型
+// 性能退化的主因：在 200ms 云 API 前这些层不可见，但在多秒本地往返中
+// 它们会逐调用叠加。
 //
-// Set `OPENCLAUDE_LOCAL_FAST_PATH=1` to force it on, `=0` to force off, or
-// leave it unset to let `isLocalProviderUrl` decide. The opt-out is intended
-// to be conservative: if the env var is set explicitly, callers can audit
-// regressions; if not, behaviour only changes for hosts already classified
-// as local by the existing detector (loopback, RFC1918, .local, ULA/LL).
+// 设置 `OPENCLAUDE_LOCAL_FAST_PATH=1` 强制开启，`=0` 强制关闭，
+// 或不设置让 `isLocalProviderUrl` 决定。此跳过设计为保守策略：
+// 如果环境变量显式设置，调用者可审计退化；否则行为仅对已被现有检测器
+// （环回、RFC1918、.local、ULA/LL）分类为本地的主机生效。
 const LOCAL_FAST_PATH_ENV = 'OPENCLAUDE_LOCAL_FAST_PATH'
 
 export type LocalFastPathConfig = {
@@ -609,6 +646,17 @@ export function getGithubEndpointType(
   }
 }
 
+/**
+ * 核心函数：解析并确定提供商请求配置。
+ *
+ * 根据环境变量和选项参数，确定：
+ * 1. 使用哪个模型（支持别名解析、查询参数、提供商特定默认值）
+ * 2. 使用哪个 base URL（优先级：显式参数 > 环境变量 > 默认值）
+ * 3. 使用哪种传输协议（chat_completions / responses / codex_responses）
+ * 4. 推理努力级别
+ *
+ * 提供商模式优先级：GitHub > Mistral > Gemini > 默认（OpenAI/Codex）
+ */
 export function resolveProviderRequest(options?: {
   model?: string
   baseUrl?: string

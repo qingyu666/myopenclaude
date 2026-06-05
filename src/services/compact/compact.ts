@@ -122,28 +122,28 @@ import {
   getPartialCompactPrompt,
 } from './prompt.js'
 
+// 压缩后恢复的最大文件数量
 export const POST_COMPACT_MAX_FILES_TO_RESTORE = 5
+// 压缩后的 token 预算
 export const POST_COMPACT_TOKEN_BUDGET = 50_000
+// 每个文件的最大 token 数
 export const POST_COMPACT_MAX_TOKENS_PER_FILE = 5_000
-// Skills can be large (verify=18.7KB, claude-api=20.1KB). Previously re-injected
-// unbounded on every compact → 5-10K tok/compact. Per-skill truncation beats
-// dropping — instructions at the top of a skill file are usually the critical
-// part. Budget sized to hold ~5 skills at the per-skill cap.
+// 技能文件可能很大（verify=18.7KB, claude-api=20.1KB）。之前每次压缩时
+// 无限制地重新注入，导致每次压缩增加 5-10K token。按技能截断优于
+// 完全丢弃——技能文件顶部的指令通常是最关键的部分。
+// 预算设定为可容纳约 5 个技能，每个技能不超过上限。
 export const POST_COMPACT_MAX_TOKENS_PER_SKILL = 5_000
 export const POST_COMPACT_SKILLS_TOKEN_BUDGET = 25_000
 const MAX_COMPACT_STREAMING_RETRIES = 2
 
 /**
- * Strip image blocks from user messages before sending for compaction.
- * Images are not needed for generating a conversation summary and can
- * cause the compaction API call itself to hit the prompt-too-long limit,
- * especially in CCD sessions where users frequently attach images.
- * Replaces image blocks with a text marker so the summary still notes
- * that an image was shared.
+ * 在发送压缩请求前，从用户消息中移除图片块。
+ * 图片对于生成对话摘要不需要，且可能导致压缩 API 调用本身
+ * 触发 prompt-too-long 限制，特别是在 CCD 会话中用户频繁附加图片时。
+ * 将图片块替换为文本标记，使摘要仍能记录图片的存在。
  *
- * Note: Only user messages contain images (either directly attached or within
- * tool_result content from tools). Assistant messages contain text, tool_use,
- * and thinking blocks but not images.
+ * 注意：只有用户消息包含图片（直接附加或在工具结果的 tool_result 内容中）。
+ * 助手消息包含文本、tool_use 和 thinking 块，不包含图片。
  */
 export function stripImagesFromMessages(messages: Message[]): Message[] {
   return messages.map(message => {
@@ -211,6 +211,7 @@ export function stripImagesFromMessages(messages: Message[]): Message[] {
  * No-op when EXPERIMENTAL_SKILL_SEARCH is off (the attachment types
  * don't exist on external builds).
  */
+// 从消息中移除重新注入的附件（压缩后添加的文件/技能附件）
 export function stripReinjectedAttachments(messages: Message[]): Message[] {
   if (feature('EXPERIMENTAL_SKILL_SEARCH')) {
     return messages.filter(
@@ -225,6 +226,7 @@ export function stripReinjectedAttachments(messages: Message[]): Message[] {
   return messages
 }
 
+// 错误消息：消息不足以执行压缩
 export const ERROR_MESSAGE_NOT_ENOUGH_MESSAGES =
   'Not enough messages to compact.'
 const MAX_PTL_RETRIES = 3
@@ -242,6 +244,10 @@ const PTL_RETRY_MARKER = '[earlier conversation truncated for compaction retry]'
  * (compactMessages.ts) has the proper retry loop that peels from the tail;
  * this helper is the dumb-but-safe fallback for the proactive/manual path
  * that wasn't migrated in bfdb472f's unification.
+ */
+/**
+ * 当 prompt-too-long 错误导致压缩失败时，截断消息头部并重试。
+ * 从最早的消息开始逐步移除，直到可以成功压缩。
  */
 export function truncateHeadForPTLRetry(
   messages: Message[],
@@ -293,12 +299,16 @@ export function truncateHeadForPTLRetry(
   return sliced
 }
 
+// 错误消息：提示词过长
 export const ERROR_MESSAGE_PROMPT_TOO_LONG =
   'Conversation too long. Press esc twice to go up a few messages and try again.'
+// 错误消息：用户中止请求
 export const ERROR_MESSAGE_USER_ABORT = 'API Error: Request was aborted.'
+// 错误消息：压缩响应不完整
 export const ERROR_MESSAGE_INCOMPLETE_RESPONSE =
   'Compaction interrupted · This may be due to network issues — please try again.'
 
+/** 压缩结果：包含边界标记、摘要消息和附件 */
 export interface CompactionResult {
   boundaryMarker: SystemMessage
   summaryMessages: UserMessage[]
@@ -317,6 +327,7 @@ export interface CompactionResult {
  * Lets the tengu_compact event disambiguate same-chain loops (H2) from
  * cross-agent (H1/H5) and manual-vs-auto (H3) compactions without joins.
  */
+/** 重新压缩信息：记录压缩的方向和原因，用于后续增量压缩 */
 export type RecompactionInfo = {
   isRecompactionInChain: boolean
   turnsSincePreviousCompact: number
@@ -329,6 +340,10 @@ export type RecompactionInfo = {
  * Build the base post-compact messages array from a CompactionResult.
  * This ensures consistent ordering across all compaction paths.
  * Order: boundaryMarker, summaryMessages, messagesToKeep, attachments, hookResults
+ */
+/**
+ * 根据压缩结果构建压缩后的消息列表。
+ * 包括边界标记、摘要消息和附件消息。
  */
 export function buildPostCompactMessages(result: CompactionResult): Message[] {
   return [
@@ -386,6 +401,18 @@ export function mergeHookInstructions(
 /**
  * Creates a compact version of a conversation by summarizing older messages
  * and preserving recent conversation history.
+ */
+/**
+ * 核心函数：压缩对话历史。
+ * 当对话 token 数接近上下文窗口限制时，将历史消息压缩为摘要，
+ * 保留关键信息（文件内容、技能指令、计划等），释放上下文空间。
+ *
+ * 压缩流程：
+ * 1. 执行 pre-compact 钩子
+ * 2. 分析上下文，确定需要保留的内容
+ * 3. 调用 LLM 生成对话摘要
+ * 4. 构建压缩后的消息列表（边界标记 + 摘要 + 附件）
+ * 5. 执行 post-compact 钩子
  */
 export async function compactConversation(
   messages: Message[],
@@ -771,6 +798,10 @@ export async function compactConversation(
  * Direction 'up_to': summarizes messages before the index, keeps later ones.
  *   Prompt cache is invalidated since the summary precedes the kept messages.
  */
+/**
+ * 部分压缩对话：只压缩指定方向（头部/尾部）的消息，
+ * 保留另一方向的消息不变。用于增量压缩场景。
+ */
 export async function partialCompactConversation(
   allMessages: Message[],
   pivotIndex: number,
@@ -1124,6 +1155,10 @@ function addErrorNotificationIfNeeded(
   }
 }
 
+/**
+ * 创建压缩期间使用的工具权限判断函数。
+ * 压缩时只允许只读工具（如文件读取、工具搜索），禁止修改性操作。
+ */
 export function createCompactCanUseTool(): CanUseToolFn {
   return async () => ({
     behavior: 'deny' as const,

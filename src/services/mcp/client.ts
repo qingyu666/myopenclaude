@@ -150,6 +150,7 @@ import type {
  * This error should be caught at the tool execution layer to update
  * the client's status to 'needs-auth'.
  */
+// MCP 认证错误：当 MCP 服务器需要认证但未提供或认证失败时抛出
 export class McpAuthError extends Error {
   serverName: string
   constructor(serverName: string, message: string) {
@@ -160,8 +161,8 @@ export class McpAuthError extends Error {
 }
 
 /**
- * Thrown when an MCP session has expired and the connection cache has been cleared.
- * The caller should get a fresh client via ensureConnectedClient and retry.
+ * MCP 会话过期错误：当 MCP 服务器的会话 ID 不再有效时抛出。
+ * 连接缓存会被清除，调用方应通过 ensureConnectedClient 获取新客户端并重试。
  */
 class McpSessionExpiredError extends Error {
   constructor(serverName: string) {
@@ -171,9 +172,9 @@ class McpSessionExpiredError extends Error {
 }
 
 /**
- * Thrown when an MCP tool returns `isError: true`. Carries the result's `_meta`
- * so SDK consumers can still receive it — per the MCP spec, `_meta` is on the
- * base Result type and is valid on error results.
+ * MCP 工具调用错误：当 MCP 工具返回 isError: true 时抛出。
+ * 携带结果的 _meta 元数据，以便 SDK 消费者仍可接收——
+ * 根据 MCP 规范，_meta 在基础 Result 类型上，在错误结果中也是有效的。
  */
 export class McpToolCallError_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS extends TelemetrySafeError_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS {
   constructor(
@@ -187,9 +188,9 @@ export class McpToolCallError_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS extends T
 }
 
 /**
- * Detects whether an error is an MCP "Session not found" error (HTTP 404 + JSON-RPC code -32001).
- * Per the MCP spec, servers return 404 when a session ID is no longer valid.
- * We check both signals to avoid false positives from generic 404s (wrong URL, server gone, etc.).
+ * 检测错误是否为 MCP "Session not found" 错误（HTTP 404 + JSON-RPC code -32001）。
+ * 根据 MCP 规范，服务器在会话 ID 不再有效时返回 404。
+ * 同时检查两个信号以避免与普通 404（URL 错误、服务器下线等）混淆。
  */
 export function isMcpSessionExpiredError(error: Error): boolean {
   const httpStatus =
@@ -312,6 +313,7 @@ function setMcpAuthCacheEntry(serverId: string): void {
     })
 }
 
+// 清除 MCP 认证缓存（内存和磁盘）
 export function clearMcpAuthCache(): void {
   authCachePromise = null
   void unlink(getMcpAuthCachePath()).catch(() => {
@@ -365,13 +367,8 @@ function handleRemoteAuthFailure(
 }
 
 /**
- * Fetch wrapper for claude.ai proxy connections. Attaches the OAuth bearer
- * token and retries once on 401 via handleOAuth401Error (force-refresh).
- *
- * The Anthropic API path has this retry (withRetry.ts, grove.ts) to handle
- * memoize-cache staleness and clock drift. Without the same here, a single
- * stale token mass-401s every claude.ai connector and sticks them all in the
- * 15-min needs-auth cache.
+ * 创建 Claude.ai 代理 fetch 函数：自动附加 OAuth Bearer 令牌，
+ * 并在 401 时尝试刷新令牌重试。带有 15 分钟的 needs-auth 缓存。
  */
 export function createClaudeAiProxyFetch(innerFetch: FetchLike): FetchLike {
   return async (url, init) => {
@@ -475,23 +472,8 @@ const MCP_REQUEST_TIMEOUT_MS = 60000
 const MCP_STREAMABLE_HTTP_ACCEPT = 'application/json, text/event-stream'
 
 /**
- * Wraps a fetch function to apply a fresh timeout signal to each request.
- * This avoids the bug where a single AbortSignal.timeout() created at connection
- * time becomes stale after 60 seconds, causing all subsequent requests to fail
- * immediately with "The operation timed out." Uses a 60-second timeout.
- *
- * Also ensures the Accept header required by the MCP Streamable HTTP spec is
- * present on POSTs. The MCP SDK sets this inside StreamableHTTPClientTransport.send(),
- * but it is attached to a Headers instance that passes through an object spread here,
- * and some runtimes/agents have been observed dropping it before it reaches the wire.
- * See https://github.com/anthropics/claude-agent-sdk-typescript/issues/202.
- * Normalizing here (the last wrapper before fetch()) guarantees it is sent.
- *
- * GET requests are excluded from the timeout since, for MCP transports, they are
- * long-lived SSE streams meant to stay open indefinitely. (Auth-related GETs use
- * a separate fetch wrapper with its own timeout in auth.ts.)
- *
- * @param baseFetch - The fetch function to wrap
+ * 为 fetch 请求添加超时包装：GET 请求（SSE 长连接）不设超时，
+ * 其他请求设置 5 分钟超时。同时确保 Streamable-HTTP Accept 头正确。
  */
 export function wrapFetchWithTimeout(baseFetch: FetchLike): FetchLike {
   return async (url: string | URL, init?: RequestInit) => {
@@ -569,6 +551,7 @@ type InProcessMcpServer = {
   close(): Promise<void>
 }
 
+// 清理失败的连接：关闭传输层和进程内服务器
 export async function cleanupFailedConnection(
   transport: Pick<Transport, 'close'>,
   inProcessServer?: Pick<InProcessMcpServer, 'close'>,
@@ -598,6 +581,7 @@ function isIncludedMcpTool(tool: Tool): boolean {
  * @param serverRef Server configuration
  * @returns Cache key string
  */
+// 生成服务器缓存键：名称 + 配置的 JSON 字符串
 export function getServerCacheKey(
   name: string,
   serverRef: ScopedMcpServerConfig,
@@ -606,11 +590,9 @@ export function getServerCacheKey(
 }
 
 /**
- * TODO (ollie): The memoization here increases complexity by a lot, and im not sure it really improves performance
- * Attempts to connect to a single MCP server
- * @param name Server name
- * @param serverRef Scoped server configuration
- * @returns A wrapped client (either connected or failed)
+ * 连接到 MCP 服务器（带 memoize 缓存）。
+ * 根据 URL 配置自动选择传输方式（stdio / SSE / Streamable HTTP / WebSocket），
+ * 处理 OAuth 认证、代理和超时，返回已连接的客户端或失败状态。
  */
 export const connectToServer = memoize(
   async (
@@ -1661,11 +1643,7 @@ export const connectToServer = memoize(
   getServerCacheKey,
 )
 
-/**
- * Clears the memoize cache for a specific server
- * @param name Server name
- * @param serverRef Server configuration
- */
+/** 清除指定服务器的 memoize 缓存（连接缓存和 fetch 缓存） */
 export async function clearServerCache(
   name: string,
   serverRef: ScopedMcpServerConfig,
@@ -1704,8 +1682,7 @@ export async function clearServerCache(
  *
  * @param client The connected MCP server client
  * @returns Connected MCP server client (same or reconnected)
- * @throws Error if server cannot be connected
- */
+/** 确保客户端已连接：如果未连接则重新连接，失败则抛出错误 */
 export async function ensureConnectedClient(
   client: ConnectedMCPServer,
 ): Promise<ConnectedMCPServer> {
@@ -2149,13 +2126,7 @@ export const fetchCommandsForClient = memoizeWithLRU(
   MCP_FETCH_CACHE_SIZE,
 )
 
-/**
- * Call an IDE tool directly as an RPC
- * @param toolName The name of the tool to call
- * @param args The arguments to pass to the tool
- * @param client The IDE client to use for the RPC call
- * @returns The result of the tool call
- */
+/** 通过 RPC 直接调用 IDE 工具 */
 export async function callIdeRpc(
   toolName: string,
   args: Record<string, unknown>,
@@ -2170,13 +2141,7 @@ export async function callIdeRpc(
   return result.content
 }
 
-/**
- * Note: This should not be called by UI components directly, they should use the reconnectMcpServer
- * function from useManageMcpConnections.
- * @param name Server name
- * @param config Server configuration
- * @returns Object containing the client connection and its resources
- */
+/** 重新连接 MCP 服务器：清除缓存、重新连接并获取工具/资源/命令 */
 export async function reconnectMcpServerImpl(
   name: string,
   config: ScopedMcpServerConfig,
@@ -2266,6 +2231,10 @@ async function processBatched<T>(
   await pMap(items, processor, { concurrency })
 }
 
+/**
+ * 获取所有 MCP 服务器的工具、命令和资源。
+ * 并发连接所有服务器，收集工具/命令/资源列表，处理认证状态。
+ */
 export async function getMcpToolsCommandsAndResources(
   onConnectionAttempt: (params: {
     client: MCPServerConnection
@@ -3312,12 +3281,8 @@ function extractToolUseId(message: AssistantMessage): string | undefined {
 }
 
 /**
- * Sets up SDK MCP clients by creating transports and connecting them.
- * This is used for SDK MCP servers that run in the same process as the SDK.
- *
- * @param sdkMcpConfigs - The SDK MCP server configurations
- * @param sendMcpMessage - Callback to send MCP messages through the control channel
- * @returns Connected clients, their tools, and transport map for message routing
+ * 设置 SDK MCP 客户端：为进程内运行的 SDK MCP 服务器创建传输层并连接。
+ * 返回已连接的客户端、工具列表和传输映射（用于消息路由）。
  */
 export async function setupSdkMcpClients(
   sdkMcpConfigs: Record<string, McpSdkServerConfig>,

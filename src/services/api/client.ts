@@ -53,46 +53,47 @@ const importRuntimeModule = new Function(
 ) as (specifier: string) => Promise<any>
 
 /**
- * Environment variables for different client types:
+ * API 客户端环境变量说明：
  *
- * Direct API:
- * - ANTHROPIC_API_KEY: Required for direct API access
+ * 直连 API：
+ * - ANTHROPIC_API_KEY：直连 API 访问所需的密钥
  *
- * AWS Bedrock:
- * - AWS credentials configured via aws-sdk defaults
- * - AWS_REGION or AWS_DEFAULT_REGION: Sets the AWS region for all models (default: us-east-1)
- * - ANTHROPIC_SMALL_FAST_MODEL_AWS_REGION: Optional. Override AWS region specifically for the small fast model (Haiku)
+ * AWS Bedrock：
+ * - 通过 aws-sdk 默认方式配置 AWS 凭证
+ * - AWS_REGION 或 AWS_DEFAULT_REGION：设置所有模型的 AWS 区域（默认：us-east-1）
+ * - ANTHROPIC_SMALL_FAST_MODEL_AWS_REGION：可选。专门为小模型（Haiku）覆盖 AWS 区域
  *
- * Foundry (Azure):
- * - ANTHROPIC_FOUNDRY_RESOURCE: Your Azure resource name (e.g., 'my-resource')
- *   For the full endpoint: https://{resource}.services.ai.azure.com/anthropic/v1/messages
- * - ANTHROPIC_FOUNDRY_BASE_URL: Optional. Alternative to resource - provide full base URL directly
- *   (e.g., 'https://my-resource.services.ai.azure.com')
+ * Foundry（Azure）：
+ * - ANTHROPIC_FOUNDRY_RESOURCE：Azure 资源名称（如 'my-resource'）
+ *   完整端点格式：https://{resource}.services.ai.azure.com/anthropic/v1/messages
+ * - ANTHROPIC_FOUNDRY_BASE_URL：可选。替代 resource 参数，直接提供完整基础 URL
+ *   （如 'https://my-resource.services.ai.azure.com'）
  *
- * Authentication (one of the following):
- * - ANTHROPIC_FOUNDRY_API_KEY: Your Microsoft Foundry API key (if using API key auth)
- * - Azure AD authentication: If no API key is provided, uses DefaultAzureCredential
- *   which supports multiple auth methods (environment variables, managed identity,
- *   Azure CLI, etc.). See: https://docs.microsoft.com/en-us/javascript/api/@azure/identity
+ * 认证方式（以下任选其一）：
+ * - ANTHROPIC_FOUNDRY_API_KEY：Microsoft Foundry API 密钥（使用密钥认证时）
+ * - Azure AD 认证：未提供 API 密钥时，使用 DefaultAzureCredential，
+ *   支持多种认证方式（环境变量、托管标识、Azure CLI 等）。
+ *   参见：https://docs.microsoft.com/en-us/javascript/api/@azure/identity
  *
- * Vertex AI:
- * - Model-specific region variables (highest priority):
- *   - VERTEX_REGION_CLAUDE_3_5_HAIKU: Region for Claude 3.5 Haiku model
- *   - VERTEX_REGION_CLAUDE_HAIKU_4_5: Region for Claude Haiku 4.5 model
- *   - VERTEX_REGION_CLAUDE_3_5_SONNET: Region for Claude 3.5 Sonnet model
- *   - VERTEX_REGION_CLAUDE_3_7_SONNET: Region for Claude 3.7 Sonnet model
- * - CLOUD_ML_REGION: Optional. The default GCP region to use for all models
- *   If specific model region not specified above
- * - ANTHROPIC_VERTEX_PROJECT_ID: Required. Your GCP project ID
- * - Standard GCP credentials configured via google-auth-library
+ * Vertex AI：
+ * - 模型特定区域变量（最高优先级）：
+ *   - VERTEX_REGION_CLAUDE_3_5_HAIKU：Claude 3.5 Haiku 模型的区域
+ *   - VERTEX_REGION_CLAUDE_HAIKU_4_5：Claude Haiku 4.5 模型的区域
+ *   - VERTEX_REGION_CLAUDE_3_5_SONNET：Claude 3.5 Sonnet 模型的区域
+ *   - VERTEX_REGION_CLAUDE_3_7_SONNET：Claude 3.7 Sonnet 模型的区域
+ * - CLOUD_ML_REGION：可选。所有模型的默认 GCP 区域
+ *   当未指定上述模型特定区域时生效
+ * - ANTHROPIC_VERTEX_PROJECT_ID：必填。GCP 项目 ID
+ * - 通过 google-auth-library 配置标准 GCP 凭证
  *
- * Priority for determining region:
- * 1. Hardcoded model-specific environment variables
- * 2. Global CLOUD_ML_REGION variable
- * 3. Default region from config
- * 4. Fallback region (us-east5)
+ * 区域确定优先级：
+ * 1. 硬编码的模型特定环境变量
+ * 2. 全局 CLOUD_ML_REGION 变量
+ * 3. 配置中的默认区域
+ * 4. 回退区域（us-east5）
  */
 
+// 创建 Anthropic SDK 的 stderr 日志记录器，将 SDK 内部日志输出到标准错误
 function createStderrLogger(): ClientOptions['logger'] {
   return {
     error: (msg, ...args) =>
@@ -236,6 +237,18 @@ function applyXaiEnvOnlyDefaults(): void {
   delete process.env.OPENAI_AUTH_HEADER_VALUE
 }
 
+/**
+ * 获取 Anthropic API 客户端实例。
+ * 根据环境变量和配置自动选择直连、Bedrock、Vertex AI、Foundry 或 OpenAI Shim 客户端。
+ *
+ * @param apiKey - 可选的 API 密钥覆盖
+ * @param maxRetries - 最大重试次数
+ * @param model - 当前使用的模型名称（用于选择提供商）
+ * @param fetchOverride - 可选的 fetch 函数覆盖
+ * @param source - 调用来源标识
+ * @param providerOverride - 提供商覆盖配置
+ * @param effortValue - 推理努力级别
+ */
 export async function getAnthropicClient({
   apiKey,
   maxRetries,
@@ -610,6 +623,7 @@ function getCustomHeaders(): Record<string, string> {
   return customHeaders
 }
 
+// 客户端请求 ID 头，用于追踪 API 请求
 export const CLIENT_REQUEST_ID_HEADER = 'x-client-request-id'
 
 function buildFetch(

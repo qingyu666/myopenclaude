@@ -1,28 +1,28 @@
 /**
- * OpenAI-compatible API shim for Claude Code.
+ * OpenClaude 的 OpenAI 兼容 API 适配层（Shim）。
  *
- * Translates Anthropic SDK calls (anthropic.beta.messages.create) into
- * OpenAI-compatible chat completion requests and streams back events
- * in the Anthropic streaming format so the rest of the codebase is unaware.
+ * 将 Anthropic SDK 调用（anthropic.beta.messages.create）转换为
+ * OpenAI 兼容的 Chat Completion 请求，并以 Anthropic 流式格式
+ * 返回事件，使代码库其余部分完全无感知后端差异。
  *
- * Supports: OpenAI, Azure OpenAI, Ollama, LM Studio, OpenRouter,
- * Together, Groq, Fireworks, DeepSeek, Mistral, and any OpenAI-compatible API.
+ * 支持的提供商：OpenAI、Azure OpenAI、Ollama、LM Studio、OpenRouter、
+ * Together、Groq、Fireworks、DeepSeek、Mistral 及任何 OpenAI 兼容 API。
  *
- * Environment variables:
- *   CLAUDE_CODE_USE_OPENAI=1          — enable this provider
- *   OPENAI_API_KEY=sk-...             — API key (optional for local models)
- *   OPENAI_AUTH_HEADER=api-key        — optional custom auth header name
- *   OPENAI_AUTH_HEADER_VALUE=...      — optional custom auth header value
- *   OPENAI_AUTH_SCHEME=bearer|raw     — auth scheme for Authorization/custom header handling
- *   OPENAI_API_FORMAT=chat_completions|responses — request format for compatible APIs
- *   OPENAI_BASE_URL=http://...        — base URL (default: https://api.openai.com/v1)
- *   OPENAI_MODEL=gpt-4o              — default model override
- *   CODEX_API_KEY / ~/.codex/auth.json — Codex auth for codexplan/codexspark
+ * 环境变量：
+ *   CLAUDE_CODE_USE_OPENAI=1          — 启用此提供商
+ *   OPENAI_API_KEY=sk-...             — API 密钥（本地模型可选）
+ *   OPENAI_AUTH_HEADER=api-key        — 可选自定义认证头名称
+ *   OPENAI_AUTH_HEADER_VALUE=...      — 可选自定义认证头值
+ *   OPENAI_AUTH_SCHEME=bearer|raw     — Authorization/自定义头的认证方案
+ *   OPENAI_API_FORMAT=chat_completions|responses — 兼容 API 的请求格式
+ *   OPENAI_BASE_URL=http://...        — 基础 URL（默认：https://api.openai.com/v1）
+ *   OPENAI_MODEL=gpt-4o              — 默认模型覆盖
+ *   CODEX_API_KEY / ~/.codex/auth.json — Codex 的 codexplan/codexspark 认证
  *
- * GitHub Copilot API (api.githubcopilot.com), OpenAI-compatible:
- *   CLAUDE_CODE_USE_GITHUB=1         — enable GitHub inference (no need for USE_OPENAI)
- *   GITHUB_TOKEN or GH_TOKEN         — Copilot API token (mapped to Bearer auth)
- *   OPENAI_MODEL                     — optional; use github:copilot or openai/gpt-4.1 style IDs
+ * GitHub Copilot API（api.githubcopilot.com），OpenAI 兼容：
+ *   CLAUDE_CODE_USE_GITHUB=1         — 启用 GitHub 推理（无需 USE_OPENAI）
+ *   GITHUB_TOKEN 或 GH_TOKEN         — Copilot API 令牌（映射为 Bearer 认证）
+ *   OPENAI_MODEL                     — 可选；使用 github:copilot 或 openai/gpt-4.1 风格 ID
  */
 
 import { APIError } from '@anthropic-ai/sdk'
@@ -100,10 +100,13 @@ type SecretValueSource = Partial<{
   MISTRAL_API_KEY: string
 }>
 
+// GitHub 429 限流重试配置
 const GITHUB_429_MAX_RETRIES = 3
 const GITHUB_429_BASE_DELAY_SEC = 1
 const GITHUB_429_MAX_DELAY_SEC = 32
+// Gemini API 主机名
 const GEMINI_API_HOST = 'generativelanguage.googleapis.com'
+// GitHub Copilot 请求头，模拟 VS Code Copilot 扩展的身份
 const COPILOT_HEADERS: Record<string, string> = {
   'User-Agent': 'GitHubCopilotChat/0.26.7',
   'Editor-Version': 'vscode/1.99.3',
@@ -115,6 +118,7 @@ function isGithubModelsMode(): boolean {
   return isEnvTruthy(process.env.CLAUDE_CODE_USE_GITHUB)
 }
 
+// 过滤 Anthropic 特有的请求头，防止泄露到第三方端点
 function filterAnthropicHeaders(
   headers: Record<string, string> | undefined,
 ): Record<string, string> {
@@ -248,13 +252,14 @@ function sleepMs(ms: number): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Types — minimal subset of Anthropic SDK types we need to produce
+// 类型定义 — 需要生成的 Anthropic SDK 类型的最小子集
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
-// Message format conversion: Anthropic → OpenAI
+// 消息格式转换：Anthropic → OpenAI
 // ---------------------------------------------------------------------------
 
+// OpenAI 格式的消息接口
 interface OpenAIMessage {
   role: 'system' | 'user' | 'assistant' | 'tool'
   content?: string | Array<{ type: string; text?: string; image_url?: { url: string } }>
@@ -276,6 +281,7 @@ interface OpenAIMessage {
   reasoning_content?: string
 }
 
+// OpenAI 格式的工具定义接口
 interface OpenAITool {
   type: 'function'
   function: {
@@ -286,6 +292,7 @@ interface OpenAITool {
   }
 }
 
+// 将 Anthropic 格式的系统提示转换为 OpenAI 格式的字符串
 function convertSystemPrompt(
   system: unknown,
 ): string {
@@ -306,6 +313,7 @@ function convertSystemPrompt(
   return String(system)
 }
 
+// 将 Anthropic 格式的工具结果内容转换为 OpenAI 格式
 function convertToolResultContent(
   content: unknown,
   isError?: boolean,
@@ -483,6 +491,8 @@ function hydrateOpenAIShimCompatibilityEnv(
   }
 }
 
+// 将 Anthropic 格式的消息列表转换为 OpenAI 格式
+// 处理 system/user/assistant/tool 角色映射和内容块转换
 function convertMessages(
   messages: Array<{
     role: string
@@ -843,6 +853,7 @@ function normalizeSchemaForOpenAI(
   return record
 }
 
+// 将 Anthropic 格式的工具定义转换为 OpenAI function calling 格式
 function convertTools(
   tools: Array<{ name: string; description?: string; input_schema?: Record<string, unknown> }>,
   options: { skipStrict?: boolean } = {},
@@ -986,6 +997,7 @@ function parseRawToolCallsRequestedText(text: string): ParsedRawToolCall[] | nul
   return toolCalls.length > 0 ? toolCalls : null
 }
 
+// 尝试修复可能被截断的 JSON 对象字符串（用于工具调用参数修复）
 function repairPossiblyTruncatedObjectJson(raw: string): string | null {
   try {
     const parsed = JSON.parse(raw)
@@ -1007,13 +1019,11 @@ function repairPossiblyTruncatedObjectJson(raw: string): string | null {
 }
 
 /**
- * Async generator that transforms an OpenAI SSE stream into
- * Anthropic-format BetaRawMessageStreamEvent objects.
+ * 异步生成器：将 OpenAI SSE 流转换为 Anthropic 格式的 BetaRawMessageStreamEvent 对象。
  */
 /**
- * Passthrough for Anthropic Messages API SSE streams.
- * The response events are already in AnthropicStreamEvent format —
- * we just parse the SSE frames and yield them directly.
+ * Anthropic Messages API SSE 流的直通处理。
+ * 响应事件已经是 AnthropicStreamEvent 格式，只需解析 SSE 帧并直接 yield。
  */
 async function* anthropicSsePassthrough(
   response: Response,
@@ -1076,6 +1086,7 @@ async function* anthropicSsePassthrough(
  * Transforms Google AI SDK SSE stream into Anthropic-format stream events.
  * Google AI SDK yields frames with { candidates: [{ content: { role, parts } }] }.
  */
+// 将 Gemini SSE 流转换为 Anthropic 格式事件
 async function* geminiSseToAnthropic(
   response: Response,
   model: string,
@@ -1250,6 +1261,8 @@ async function* geminiSseToAnthropic(
   }
 }
 
+// 将 OpenAI Chat Completion SSE 流转换为 Anthropic 格式事件
+// 处理文本增量、工具调用增量、推理内容和停止原因映射
 async function* openaiStreamToAnthropic(
   response: Response,
   model: string,
@@ -3105,6 +3118,11 @@ class OpenAIShimBeta {
   }
 }
 
+/**
+ * 创建 OpenAI 兼容的 Shim 客户端。
+ * 返回的对象模拟 Anthropic SDK 客户端接口（beta.messages.create），
+ * 内部将请求转换为 OpenAI Chat Completion 调用。
+ */
 export function createOpenAIShimClient(options: {
   defaultHeaders?: Record<string, string>
   maxRetries?: number

@@ -2,9 +2,12 @@
 
 /**
  * OpenClaude — Claude Code with any LLM
+ * OpenClaude — 支持任意 LLM 的 Claude Code
  *
  * If dist/cli.mjs exists (built), run that.
+ * 如果 dist/cli.mjs 存在（已构建），则运行它。
  * Otherwise, tell the user to build first or use `bun run dev`.
+ * 否则，提示用户先构建或使用 `bun run dev`。
  */
 
 import { existsSync } from 'fs'
@@ -13,17 +16,19 @@ import { fileURLToPath, pathToFileURL } from 'url'
 import { spawnSync } from 'child_process'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-const distPath = join(__dirname, '..', 'dist', 'cli.mjs')
+const distPath = join(__dirname, '..', 'dist', 'cli.mjs') // 构建产物的路径
 
-const HEAP_RELAUNCHED_ENV = 'OPENCLAUDE_HEAP_RELAUNCHED'
-const DISABLE_HEAP_RELAUNCH_ENV = 'OPENCLAUDE_DISABLE_HEAP_RELAUNCH'
-const HEAP_SIZE_ENV = 'OPENCLAUDE_NODE_MAX_OLD_SPACE_SIZE_MB'
-const DEFAULT_HEAP_SIZE_MB = 8192
+const HEAP_RELAUNCHED_ENV = 'OPENCLAUDE_HEAP_RELAUNCHED' // 标记已重新启动以设置堆内存的环境变量
+const DISABLE_HEAP_RELAUNCH_ENV = 'OPENCLAUDE_DISABLE_HEAP_RELAUNCH' // 禁用堆内存重启的环境变量
+const HEAP_SIZE_ENV = 'OPENCLAUDE_NODE_MAX_OLD_SPACE_SIZE_MB' // 堆内存大小配置的环境变量
+const DEFAULT_HEAP_SIZE_MB = 8192 // 默认堆内存大小（MB）
 
+// 检查参数列表中是否包含指定的 Node.js 标志
 function hasNodeFlag(args, flag) {
   return args.some(arg => arg === flag || arg.startsWith(`${flag}=`))
 }
 
+// 检查当前进程是否已设置指定的 Node.js 选项标志
 function hasNodeOptionFlag(flag) {
   return hasNodeFlag([
     ...process.execArgv,
@@ -31,8 +36,9 @@ function hasNodeOptionFlag(flag) {
   ], flag)
 }
 
+// 获取堆内存大小（MB），--max-memory 参数优先于环境变量
 function getHeapSizeMb() {
-  // --max-memory flag overrides env var
+  // --max-memory 参数会覆盖环境变量
   const maxMemArg = process.argv.find(a => a.startsWith('--max-memory='))
   if (maxMemArg) {
     const mb = Number.parseInt(maxMemArg.split('=')[1] || '0', 10)
@@ -51,30 +57,36 @@ function getHeapSizeMb() {
     : DEFAULT_HEAP_SIZE_MB
 }
 
+// 如果需要，重新启动进程以设置长会话所需的堆内存和 GC 参数
 function relaunchWithLongSessionHeapIfNeeded() {
+  // 如果禁用了堆内存重启，直接返回
   if (process.env[DISABLE_HEAP_RELAUNCH_ENV] === '1') return
+  // 如果已经重新启动过，直接返回
   if (process.env[HEAP_RELAUNCHED_ENV] === '1') return
+  // 检查是否已设置堆内存限制和显式 GC
   const hasHeapLimit = hasNodeOptionFlag('--max-old-space-size')
   const hasExplicitGc = hasNodeOptionFlag('--expose-gc')
   if (hasHeapLimit && hasExplicitGc) return
 
   const execArgv = [...process.execArgv]
+  // 如果没有堆内存限制，添加默认值
   if (!hasHeapLimit) {
     execArgv.push(`--max-old-space-size=${getHeapSizeMb()}`)
   }
 
-  // Expose explicit GC for long interactive sessions. NODE_OPTIONS cannot
-  // carry --expose-gc, so the executable wrapper must add it before startup.
+  // 为长时间交互会话暴露显式 GC。NODE_OPTIONS 无法
+  // 携带 --expose-gc，所以可执行文件包装器必须在启动前添加它。
   if (!hasExplicitGc) {
     execArgv.push('--expose-gc')
   }
 
-  // Strip --max-memory flag before relaunching — it's a launcher-only arg
-  // that Commander in the built CLI would reject as unknown.
+  // 重新启动前移除 --max-memory 参数——它是启动器专用参数，
+  // Commander 在构建的 CLI 中会将其视为未知参数而拒绝。
   const childArgs = process.argv.slice(2).filter(
     arg => !arg.startsWith('--max-memory=') && arg !== '--max-memory',
   )
 
+  // 使用新的参数重新启动进程
   const result = spawnSync(process.execPath, [
     ...execArgv,
     fileURLToPath(import.meta.url),
@@ -83,7 +95,7 @@ function relaunchWithLongSessionHeapIfNeeded() {
     stdio: 'inherit',
     env: {
       ...process.env,
-      [HEAP_RELAUNCHED_ENV]: '1',
+      [HEAP_RELAUNCHED_ENV]: '1', // 标记已重新启动
     },
   })
 
@@ -95,20 +107,23 @@ function relaunchWithLongSessionHeapIfNeeded() {
   process.exit(result.status ?? 1)
 }
 
+// 主逻辑：如果构建产物存在，先检查堆内存配置，然后加载构建产物
 if (existsSync(distPath)) {
   relaunchWithLongSessionHeapIfNeeded()
   await import(pathToFileURL(distPath).href)
 } else {
   console.error(`
   openclaude: dist/cli.mjs not found.
+  openclaude: 未找到 dist/cli.mjs。
 
-  Build first:
+  Build first / 请先构建:
     bun run build
 
-  Or run directly with Bun:
+  Or run directly with Bun / 或直接使用 Bun 运行:
     bun run dev
 
   See README.md for setup instructions.
+  查看 README.md 获取安装说明。
 `)
   process.exit(1)
 }
